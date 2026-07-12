@@ -2,6 +2,13 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 
+// 🌐 TypeScript İçin Global Ethereum (MetaMask) Vizesi
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
+
 // 🛡️ SafeBridge Resmi Çalışma Ağı (Polygon Mainnet - Chain ID: 137 / 0x89)
 const TARGET_CHAIN_ID = "0x89"; 
 const TARGET_NETWORK_NAME = "Polygon Mainnet";
@@ -12,42 +19,61 @@ const CONTRACT_ADDRESS = "0x9e88A41c8888b5D65A0D23055e810594D024f227";
 // 👑 YÖNETİCİ (OWNER) YEDEK KONTROL ADRESİ
 const FALLBACK_ADMIN_ADDRESS = "0x68E0c0000000000000000000000000000001588D";
 
+// 📦 Escrow İşlem Veri Tipi Tanımı
+interface EscrowItem {
+  id: number;
+  seller: string;
+  amount: string;
+  desc: string;
+  password?: string;
+  deadline?: number;
+  state: string;
+}
+
 export default function HomePage() {
   // 📱 AKILLI SEKME (TAB) HAFIZASI
-  const [activeTab, setActiveTab] = useState("transfer");
+  const [activeTab, setActiveTab] = useState<string>("transfer");
 
   // ⚙️ GENEL CÜZDAN VE KASA SENSÖRLERİ
-  const [account, setAccount] = useState("");
-  const [balance, setBalance] = useState("0.0000");
-  const [vaultBalance, setVaultBalance] = useState("0.0000");
-  const [status, setStatus] = useState("");
-  const [isWrongNetwork, setIsWrongNetwork] = useState(false);
+  const [account, setAccount] = useState<string>("");
+  const [balance, setBalance] = useState<string>("0.0000");
+  const [vaultBalance, setVaultBalance] = useState<string>("0.0000");
+  const [status, setStatus] = useState<string>("");
+  const [isWrongNetwork, setIsWrongNetwork] = useState<boolean>(false);
 
   // 🔒 GÜVENLİK ZIRHI: Yönetici (Owner) Yetki Kilidi
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [showPassword, setShowPassword] = useState(false); // 👁️ Göz İkonu Sensörü
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [showPassword, setShowPassword] = useState<boolean>(false);
 
   // 🚀 1. MOTOR (TRANSFER) DEĞİŞKENLERİ
-  const [transferAddress, setTransferAddress] = useState("");
-  const [transferAmount, setTransferAmount] = useState("");
-  const [transferToken, setTransferToken] = useState("POL");
+  const [transferAddress, setTransferAddress] = useState<string>("");
+  const [transferAmount, setTransferAmount] = useState<string>("");
+  const [transferToken, setTransferToken] = useState<string>("POL");
 
   // 🤝 2. MOTOR (ESCROW TİCARET) DEĞİŞKENLERİ
-  const [escrowSeller, setEscrowSeller] = useState("");
-  const [escrowAmount, setEscrowAmount] = useState("");
-  const [escrowToken, setEscrowToken] = useState("POL");
-  const [escrowDesc, setEscrowDesc] = useState("");
-  const [escrowPassword, setEscrowPassword] = useState(""); 
-  const [activeEscrows, setActiveEscrows] = useState([
-    { id: 101, seller: "0x71C...89A1", amount: "0.05 POL", desc: "Web Tasarım Hizmeti", password: "123", deadline: Math.floor(Date.now() / 1000) + 1000, state: "🔒 Kasada Kilitli" }
+  const [escrowSeller, setEscrowSeller] = useState<string>("");
+  const [escrowAmount, setEscrowAmount] = useState<string>("");
+  const [escrowToken, setEscrowToken] = useState<string>("POL");
+  const [escrowDesc, setEscrowDesc] = useState<string>("");
+  const [escrowPassword, setEscrowPassword] = useState<string>(""); 
+  const [activeEscrows, setActiveEscrows] = useState<EscrowItem[]>([
+    { 
+      id: 101, 
+      seller: "0x71C...89A1", 
+      amount: "0.05 POL", 
+      desc: "Web Tasarım Hizmeti", 
+      password: "123", 
+      deadline: Math.floor(Date.now() / 1000) + 1000, 
+      state: "🔒 Kasada Kilitli" 
+    }
   ]);
 
   // 🛠️ 3. MOTOR (YÖNETİCİ PANELİ) DEĞİŞKENLERİ
-  const [feeBps, setFeeBps] = useState("50");
-  const [newFeeInput, setNewFeeInput] = useState("");
+  const [feeBps, setFeeBps] = useState<string>("50");
+  const [newFeeInput, setNewFeeInput] = useState<string>("");
 
   // 🛡️ Ağ Kontrolü
-  const checkNetwork = async (provider) => {
+  const checkNetwork = async (provider: any): Promise<boolean> => {
     try {
       const network = await provider.getNetwork();
       if (network.chainId.toString() !== "137" && '0x' + network.chainId.toString(16) !== TARGET_CHAIN_ID) {
@@ -57,7 +83,9 @@ export default function HomePage() {
       }
       setIsWrongNetwork(false);
       return true;
-    } catch (err) { return false; }
+    } catch (err) { 
+      return false; 
+    }
   };
 
   // 🛡️ Doğru Ağa Geçiş
@@ -67,7 +95,9 @@ export default function HomePage() {
       await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: TARGET_CHAIN_ID }] });
       setIsWrongNetwork(false);
       setStatus("🟢 Doğru ağa geçildi! Güvenlik kilitleri aktif.");
-    } catch (err) { alert(`⚠️ Lütfen MetaMask üzerinden ${TARGET_NETWORK_NAME} ağını seçin.`); }
+    } catch (err) { 
+      alert(`⚠️ Lütfen MetaMask üzerinden ${TARGET_NETWORK_NAME} ağını seçin.`); 
+    }
   };
 
   // 🔒 Cüzdan Bağlama, Kasa Sensörü ve YÖNETİCİ YETKİ KONTROLÜ
@@ -116,7 +146,9 @@ export default function HomePage() {
           }
         }
       }
-    } catch (err) { setStatus("🔴 Cüzdan bağlantısı reddedildi."); }
+    } catch (err) { 
+      setStatus("🔴 Cüzdan bağlantısı reddedildi."); 
+    }
   };
 
   // 🚀 1. MODÜL: TRANSFER MOTORU
@@ -146,14 +178,15 @@ export default function HomePage() {
       }
 
       setStatus(`✅ BAŞARILI! ${transferAmount} ${transferToken} transferi Polygon blokzincirinde kesinleşti!`);
-      setTransferAmount(""); setTransferAddress("");
-    } catch (err) { 
+      setTransferAmount(""); 
+      setTransferAddress("");
+    } catch (err: any) { 
       if (err.code === "ACTION_REJECTED" || err.code === 4001) setStatus("❌ İşlem iptal edildi: MetaMask onayı reddedildi.");
       else setStatus(`❌ HATA: Transfer gerçekleştirilemedi.`);
     }
   };
 
-  // 🤝 2. MODÜL: ESCROW KASASI (2 AŞAMALI ŞIFRE VE 6 AY ZAMAN KİLİTLİ)
+  // 🤝 2. MODÜL: ESCROW KASASI
   const handleCreateEscrow = async () => {
     if (!account) return alert("🔒 Önce lütfen cüzdanınızı bağlayın!");
     if (isWrongNetwork) { switchNetwork(); return; }
@@ -162,7 +195,6 @@ export default function HomePage() {
     if (!escrowDesc) return alert("⚠️ Lütfen ticaret açıklaması yazın!");
     if (!escrowPassword) return alert("🔒 GÜVENLİK FRENİ: Lütfen bir kilit şifresi belirleyin!");
 
-    // 🔒 2 Aşamalı Güvenlik Şifresi Kontrolü
     const confirmPassword = prompt("🔒 Lütfen oluşturduğunuz şifreyi doğrulamak için tekrar girin:");
     if (confirmPassword !== escrowPassword) {
       alert("❌ HATA: Girdiğiniz şifreler birbiriyle uyuşmuyor! Lütfen tekrar deneyin.");
@@ -188,7 +220,6 @@ export default function HomePage() {
         await tx.wait();
       }
 
-      // ⏰ 6 Aylık Zaman Damgası Hesaplama (Saniye Cinsinden)
       const sixMonthsInSeconds = 6 * 30 * 24 * 60 * 60; 
       const deadline = Math.floor(Date.now() / 1000) + sixMonthsInSeconds;
 
@@ -202,28 +233,29 @@ export default function HomePage() {
         deadline: deadline,
         state: "🔒 6 Ay Zaman Kilitli"
       }]);
-      setEscrowAmount(""); setEscrowSeller(""); setEscrowDesc(""); setEscrowPassword("");
+      setEscrowAmount(""); 
+      setEscrowSeller(""); 
+      setEscrowDesc(""); 
+      setEscrowPassword("");
       
       const contractBal = await provider.getBalance(CONTRACT_ADDRESS);
       setVaultBalance(ethers.formatEther(contractBal));
-    } catch (err) { 
+    } catch (err: any) { 
       if (err.code === "ACTION_REJECTED" || err.code === 4001) setStatus("❌ İşlem iptal edildi: MetaMask onayı reddedildi.");
       else setStatus("❌ HATA: Escrow kasasına kilitleme başarısız oldu.");
     }
   };
 
-  // 🟢 ESCROW KİLİDİ AÇMA & OTOMATİK ZAMAN KONTROLÜ
-  const handleRelease = (id, originalPassword, deadline) => {
+  // 🟢 ESCROW KİLİDİ AÇMA
+  const handleRelease = (id: number, originalPassword?: string, deadline?: number) => {
     const now = Math.floor(Date.now() / 1000);
     
-    // ⏰ 6 AY GEÇTİYSE OTOMATİK İCRA (Şifre sormadan doğrudan aç!)
     if (deadline && now > deadline) {
       alert("⏰ 6 Aylık güvenlik koruma süresi doldu! Akıllı sözleşme fonu otomatik olarak serbest bıraktı.");
       setActiveEscrows(activeEscrows.filter(item => item.id !== id));
       return;
     }
 
-    // 🔒 Süre Dolmadıysa Şifre ile Aç
     const inputPass = prompt("🔒 6 aylık süre dolmadı. Kilidi açmak için Güvenlik Şifresini girin:");
     if (inputPass === originalPassword) {
       alert(`🎉 Şifre Doğru! İşlem #${id} Onaylandı! Fon serbest bırakıldı.`);
@@ -521,3 +553,32 @@ export default function HomePage() {
       </div>
 
       {/* 📖 KULLANIM KILAVUZU BÖLÜMÜ (EN ALTA SABİTLENDİ) */}
+      <div className="w-full max-w-6xl mt-12 bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl">
+        <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2"><span>📖</span> SafeBridge Kullanım Rehberi</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-gray-400 text-xs sm:text-sm">
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/60">
+            <strong className="text-blue-400 block mb-1.5">🚀 1. Hızlı Transfer</strong>
+            Cüzdanınızı bağlayın, varlık türünü ve miktarı seçin. Alıcı adresi girip MetaMask üzerinden onay vererek transferi Polygon zincirinde saniyeler içinde kesinleştirin.
+          </div>
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/60">
+            <strong className="text-emerald-400 block mb-1.5">🤝 2. Escrow (Emanet) Ticareti</strong>
+            Satıcı adresini ve işlem detaylarını girin. Güvenlik şifrenizi belirleyin, sistem sizden 2. kez doğrulama isteyecektir. Onay verdiğinizde varlıklarınız akıllı emanet kasasına kilitlenir.
+          </div>
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/60">
+            <strong className="text-purple-400 block mb-1.5">⏰ 3. 6 Aylık Otomatik İcra</strong>
+            Sistemimiz 6 aylık "Zaman Kilidi" (Time-lock) motoruna sahiptir. Eğer taraflar 6 ay boyunca bir karara varamazsa, sözleşme kuralları gereği kilit otomatik olarak esner veya güvenle çözülür.
+          </div>
+        </div>
+        <div className="mt-4 text-[11px] text-gray-500 text-center border-t border-slate-800/60 pt-3">
+          ⚠️ <b>Güvenlik Uyarısı:</b> Belirlediğiniz şifre kasanın tek anahtarıdır. Ticaret konusu mal veya hizmeti sorunsuz teslim almadan şifreyi karşı tarafla paylaşmayınız.
+        </div>
+      </div>
+
+      {/* Alt Bilgi */}
+      <div className="mt-16 text-gray-600 text-xs font-mono text-center">
+        SafeBridge v2.5.0 • 3 Modüllü Yönetici Kokpiti • Hoşdere Disipliniyle Üretildi 🛠️
+      </div>
+
+    </div>
+  );
+}
