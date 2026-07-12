@@ -180,8 +180,8 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 📱 TELEFONLAR İÇİN AKILLI SEKME (TAB) BUTONLARI (Bilgisayarda gizlenir!) */}
-      <div className="flex lg:hidden w-full max-w-md bg-slate-900 p-1.5 rounded-2xl border border-slate-800 mb-6 shadow-lg">
+      {/* 📱 TELEFONLAR İÇİN AKILLI SEKME (TAB) BUTONLARI */}
+      <div className="flex lg:hidden w-full max-w-md bg-slate-900 p-1.5 rounded-2xl border border-slate-800 mb-6 shadow-lg mx-auto">
         <button
           onClick={() => setActiveTab("transfer")}
           className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${
@@ -204,7 +204,6 @@ export default function HomePage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full max-w-6xl items-start">
         
         {/* 🚀 1. MOTOR: ANLIK GÜVENLİ TRANSFER KOKPİTİ */}
-        {/* Telefondaysa sadece activeTab == 'transfer' ise görünür. Bilgisayarda (lg:) her zaman görünür! */}
         <div className={`${activeTab === "transfer" ? "block" : "hidden"} lg:block bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl hover:border-blue-500/30 transition-all`}>
           <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
             <div>
@@ -239,7 +238,7 @@ export default function HomePage() {
               onClick={handleTransfer}
               disabled={!account || isWrongNetwork}
               className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${
-                !account ? "bg-gray-800 text-gray-500 cursor-not-allowed" : isWrongNetwork ? "bg-red-600 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/30 active:scale-95 cursor-pointer"
+                !account ? "bg-gray-700 text-gray-500 cursor-not-allowed" : isWrongNetwork ? "bg-red-600 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/30 active:scale-95 cursor-pointer"
               }`}
             >
               {!account ? "🔒 Önce Cüzdan Bağlayın" : "🚀 Güvenli Gönderimi Başlat"}
@@ -248,7 +247,6 @@ export default function HomePage() {
         </div>
 
         {/* 🤝 2. MOTOR: ESCROW GÜVENCELİ TİCARET KOKPİTİ */}
-        {/* Telefondaysa sadece activeTab == 'escrow' ise görünür. Bilgisayarda (lg:) her zaman görünür! */}
         <div className={`${activeTab === "escrow" ? "block" : "hidden"} lg:block bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl hover:border-emerald-500/30 transition-all flex flex-col justify-between h-full`}>
           <div>
             <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
@@ -290,7 +288,7 @@ export default function HomePage() {
                 onClick={handleCreateEscrow}
                 disabled={!account || isWrongNetwork}
                 className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${
-                  !account ? "bg-gray-800 text-gray-500 cursor-not-allowed" : isWrongNetwork ? "bg-red-600 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30 active:scale-95 cursor-pointer"
+                  !account ? "bg-gray-700 text-gray-500 cursor-not-allowed" : isWrongNetwork ? "bg-red-600 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30 active:scale-95 cursor-pointer"
                 }`}
               >
                 {!account ? "🔒 Önce Cüzdan Bağlayın" : "🤝 Kasaya Kilitle & Başlat"}
@@ -298,7 +296,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Aktif Kilitli İşlemler Mini Paneli */}
           <div className="mt-6 pt-4 border-t border-slate-800">
             <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center justify-between">
               <span>📜 Kilitli Kasadaki İşlemler</span>
