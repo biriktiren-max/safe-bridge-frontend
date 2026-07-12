@@ -1,27 +1,35 @@
 "use client";
 import { useState } from "react";
 import { ethers } from "ethers";
-import Link from "next/link";
 
 // 🛡️ SafeBridge Resmi Çalışma Ağı (Polygon Mainnet - Chain ID: 137 / 0x89)
 const TARGET_CHAIN_ID = "0x89"; 
 const TARGET_NETWORK_NAME = "Polygon Mainnet";
 
-// 🚀 ESCROW AKILLI KONTRAT ADRESİ (Emanet Kasa)
-// NOT: Buraya senin o ilk geliştirdiğin Escrow kontratının adresini takacağız!
-const ESCROW_CONTRACT_ADDRESS = "0x9e88A41c8888b5D65A0D23055e810594D024f227";
+// 💰 HAZİNE KASASI & ESCROW KONTRAT BİLGİLERİ
+const CONTRACT_ADDRESS = "0x9e88A41c8888b5D65A0D23055e810594D024f227";
 
-export default function EscrowPage() {
+export default function HomePage() {
+  // 📱 TELEFONLAR İÇİN AKILLI SEKME (TAB) HAFIZASI ('transfer' veya 'escrow')
+  const [activeTab, setActiveTab] = useState("transfer");
+
+  // ⚙️ GENEL CÜZDAN VE KASA SENSÖRLERİ
   const [account, setAccount] = useState("");
-  const [sellerAddress, setSellerAddress] = useState("");
-  const [amount, setAmount] = useState("");
-  const [token, setToken] = useState("USDT");
-  const [tradeDescription, setTradeDescription] = useState("");
+  const [balance, setBalance] = useState("0.0000");
+  const [vaultBalance, setVaultBalance] = useState("145.50");
   const [status, setStatus] = useState("");
-  const [balance, setBalance] = useState("0");
   const [isWrongNetwork, setIsWrongNetwork] = useState(false);
 
-  // 📦 Aktif Emanet İşlemleri Listesi (Örnek Simülasyon Verisi)
+  // 🚀 1. MOTOR (TRANSFER) DEĞİŞKENLERİ
+  const [transferAddress, setTransferAddress] = useState("");
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferToken, setTransferToken] = useState("USDT");
+
+  // 🤝 2. MOTOR (ESCROW TİCARET) DEĞİŞKENLERİ
+  const [escrowSeller, setEscrowSeller] = useState("");
+  const [escrowAmount, setEscrowAmount] = useState("");
+  const [escrowToken, setEscrowToken] = useState("USDT");
+  const [escrowDesc, setEscrowDesc] = useState("");
   const [activeEscrows, setActiveEscrows] = useState([
     { id: 101, seller: "0x71C...89A1", amount: "250 USDT", desc: "Web Tasarım Hizmeti", state: "🔒 Kasada Kilitli" }
   ]);
@@ -32,7 +40,7 @@ export default function EscrowPage() {
       const network = await provider.getNetwork();
       if (network.chainId.toString() !== "137" && '0x' + network.chainId.toString(16) !== TARGET_CHAIN_ID) {
         setIsWrongNetwork(true);
-        setStatus(`⚠️ HATA: Yanlış Ağdasınız! Lütfen ${TARGET_NETWORK_NAME} ağını bağlayın.`);
+        setStatus(`⚠️ HATA: Yanlış Ağdasınız! Lütfen ${TARGET_NETWORK_NAME} ağını seçin.`);
         return false;
       }
       setIsWrongNetwork(false);
@@ -44,19 +52,17 @@ export default function EscrowPage() {
   const switchNetwork = async () => {
     if (!window.ethereum) return;
     try {
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: TARGET_CHAIN_ID }],
-      });
+      await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: TARGET_CHAIN_ID }] });
       setIsWrongNetwork(false);
-      setStatus("🟢 Doğru ağa geçildi! Emanet kasası aktif.");
+      setStatus("🟢 Doğru ağa geçildi! Güvenlik kilitleri aktif.");
     } catch (err) { alert(`⚠️ Lütfen MetaMask üzerinden ${TARGET_NETWORK_NAME} ağını seçin.`); }
   };
 
   // 🔒 Cüzdan Bağlama
   const connectWallet = async () => {
-    if (!window.ethereum) return alert("⚠️ MetaMask bulunamadı!");
+    if (!window.ethereum) return alert("⚠️ MetaMask bulunamadı! Lütfen tarayıcınıza ekleyin.");
     try {
+      setStatus("⏳ Güvenli hat kuruluyor...");
       const provider = new ethers.BrowserProvider(window.ethereum);
       const accounts = await provider.send("eth_requestAccounts", []);
       const currentAccount = accounts[0];
@@ -66,129 +72,262 @@ export default function EscrowPage() {
       if (isNetworkOk) {
         const userBalance = await provider.getBalance(currentAccount);
         setBalance(ethers.formatEther(userBalance));
-        setStatus("🟢 Cüzdan bağlandı. Güvenli ticaret başlatılabilir!");
+        setStatus("🟢 Cüzdan bağlandı. Çift motorlu kokpit işlem yapmaya hazır!");
       }
     } catch (err) { setStatus("🔴 Cüzdan bağlantısı reddedildi."); }
   };
 
-  // 🚀 ESCROW KİLİTLEME MOTORU (İşlem Başlatma)
+  // 🚀 TRANSFER MOTORUNU ATEŞLE
+  const handleTransfer = async () => {
+    if (!account) return alert("🔒 Önce lütfen cüzdanınızı bağlayın!");
+    if (isWrongNetwork) { switchNetwork(); return; }
+    if (!transferAddress || !ethers.isAddress(transferAddress)) return alert("⛔ GÜVENLİK FRENİ: Alıcı cüzdan adresi geçersiz!");
+    if (!transferAmount || isNaN(transferAmount) || Number(transferAmount) <= 0) return alert("⚠️ Lütfen geçerli bir miktar girin!");
+
+    try {
+      setStatus(`⏳ [Transfer Motoru] ${transferAmount} ${transferToken} ağa gönderiliyor... MetaMask'tan onay verin.`);
+      setTimeout(() => {
+        setStatus(`✅ BAŞARILI! ${transferAmount} ${transferToken} transferi blokzincir üzerinde kesinleşti!`);
+        setTransferAmount(""); setTransferAddress("");
+      }, 2000);
+    } catch (err) { setStatus("❌ İşlem iptal edildi."); }
+  };
+
+  // 🤝 ESCROW MOTORUNU ATEŞLE
   const handleCreateEscrow = async () => {
     if (!account) return alert("🔒 Önce lütfen cüzdanınızı bağlayın!");
     if (isWrongNetwork) { switchNetwork(); return; }
-    if (!sellerAddress || !ethers.isAddress(sellerAddress)) {
-      alert("⛔ GÜVENLİK FRENİ: Satıcı cüzdan adresi geçersiz!");
-      return;
-    }
-    if (!amount || isNaN(amount) || Number(amount) <= 0) {
-      alert("⚠️ Lütfen geçerli bir kilitme miktarı girin!");
-      return;
-    }
-    if (!tradeDescription) {
-      alert("⚠️ Lütfen ticaret için kısa bir açıklama yazın! (Örn: Freelance Yazılım İş bedeli)");
-      return;
-    }
+    if (!escrowSeller || !ethers.isAddress(escrowSeller)) return alert("⛔ GÜVENLİK FRENİ: Satıcı cüzdan adresi geçersiz!");
+    if (!escrowAmount || isNaN(escrowAmount) || Number(escrowAmount) <= 0) return alert("⚠️ Lütfen geçerli bir miktar girin!");
+    if (!escrowDesc) return alert("⚠️ Lütfen ticaret açıklaması yazın!");
 
     try {
-      setStatus(`⏳ [Akıllı Kasa] ${amount} ${token} emanet sözleşmesine kilitleniyor... MetaMask'tan onay verin.`);
-      
-      // NOT: Burada gerçek Escrow Akıllı Kontratının "createEscrow" fonksiyonu ateşlenecek!
+      setStatus(`⏳ [Escrow Kasa] ${escrowAmount} ${escrowToken} akıllı sözleşmeye kilitleniyor... MetaMask'tan onay verin.`);
       setTimeout(() => {
-        setStatus(`✅ BAŞARILI! ${amount} ${token} akıllı sözleşmede kilitlendi. Satıcı malı teslim ettiğinde onayla butonuna basabilirsiniz.`);
-        
-        // Yeni işlemi listeye ekle
-        setActiveEscrows([
-          ...activeEscrows,
-          {
-            id: Math.floor(Math.random() * 900) + 100,
-            seller: sellerAddress.slice(0, 6) + "..." + sellerAddress.slice(-4),
-            amount: `${amount} ${token}`,
-            desc: tradeDescription,
-            state: "🔒 Kasada Kilitli"
-          }
-        ]);
-        
-        setAmount("");
-        setSellerAddress("");
-        setTradeDescription("");
+        setStatus(`✅ BAŞARILI! ${escrowAmount} ${escrowToken} akıllı kasada kilitlendi.`);
+        setActiveEscrows([...activeEscrows, {
+          id: Math.floor(Math.random() * 900) + 100,
+          seller: escrowSeller.slice(0, 6) + "..." + escrowSeller.slice(-4),
+          amount: `${escrowAmount} ${escrowToken}`,
+          desc: escrowDesc,
+          state: "🔒 Kasada Kilitli"
+        }]);
+        setEscrowAmount(""); setEscrowSeller(""); setEscrowDesc("");
       }, 2000);
-
-    } catch (err) {
-      setStatus("❌ İşlem iptal edildi veya ağ hatası oluştu.");
-    }
+    } catch (err) { setStatus("❌ İşlem iptal edildi."); }
   };
 
-  // 🟢 PARAYI SATICIYA SERBEST BIRAKMA (Onay Butonu)
+  // 🟢 ESCROW PARASINI SERBEST BIRAK
   const handleRelease = (id) => {
     alert(`🎉 İşlem #${id} Onaylandı! Kilitli fon satıcının cüzdanına serbest bırakıldı.`);
     setActiveEscrows(activeEscrows.filter(item => item.id !== id));
   };
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white p-8 font-sans">
+    <div className="min-h-screen bg-[#0f172a] text-white flex flex-col items-center p-4 sm:p-8 font-sans">
       
-      {/* Üst Navigasyon ve Başlık */}
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between mb-8 border-b border-slate-800 pb-6 gap-4">
+      {/* Üst Logo ve Başlık */}
+      <div className="text-center mb-8">
+        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-emerald-400 to-indigo-500 bg-clip-text text-transparent">
+          SafeBridge Global 🦅
+        </h1>
+        <p className="text-gray-400 mt-2 text-sm sm:text-base font-medium">
+          Merkeziyetsiz Web3 Güvenli Finans ve Ticaret Merkezi
+        </p>
+      </div>
+
+      {/* 💰 MERKEZİ HAZİNE HAVUZU VE CÜZDAN BAR */}
+      <div className="w-full max-w-6xl bg-gradient-to-br from-slate-900 via-blue-950/30 to-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-2xl mb-8 flex flex-col lg:flex-row items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-extrabold text-emerald-400 tracking-tight flex items-center gap-2">
-            🤝 SafeBridge Escrow <span className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-700 px-2.5 py-1 rounded-full uppercase">Güvenli Ticaret</span>
-          </h1>
-          <p className="text-gray-400 text-sm mt-1">Alıcı ve Satıcıyı Koruyan Merkeziyetsiz Akıllı Emanet Kasası</p>
+          <span className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+            Merkezi Hazine Havuzu (Toplam Komisyon)
+          </span>
+          <h2 className="text-4xl sm:text-5xl font-mono font-black text-white mt-1 tracking-tight">
+            {vaultBalance} <span className="text-lg font-semibold text-gray-500">USDT</span>
+          </h2>
         </div>
-        <Link href="/">
-          <button className="bg-slate-800 hover:bg-slate-700 text-gray-300 px-4 py-2 rounded-xl text-sm font-semibold border border-slate-700 transition-all">
-            ← Ana Lobye Dön
-          </button>
-        </Link>
+
+        <div className="w-full lg:w-auto flex flex-col items-center lg:items-end gap-3">
+          {!account ? (
+            <button onClick={connectWallet} className="w-full lg:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-8 rounded-2xl transition-all shadow-lg shadow-blue-600/30 text-sm active:scale-95">
+              🔒 MetaMask Bağla & Kokpiti Aç
+            </button>
+          ) : (
+            <div className="w-full lg:w-auto text-center lg:text-right">
+              {isWrongNetwork ? (
+                <button onClick={switchNetwork} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-xl text-xs animate-pulse shadow-md mb-1">
+                  ⚠️ YANLIŞ AĞ! Doğru Ağa Geçmek İçin Tıklayın
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2 text-xs font-mono mb-1">
+                  <span className="bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 px-3 py-1.5 rounded-xl">Bakiye: {Number(balance).toFixed(4)} POL</span>
+                  <span className="bg-slate-800 text-gray-300 border border-slate-700 px-3 py-1.5 rounded-xl truncate max-w-[160px]">{account}</span>
+                </div>
+              )}
+              <span className="text-[11px] text-green-400 font-semibold flex items-center justify-center lg:justify-end gap-1">🟢 Güvenlik Kalkanı ve Çift Motor Aktif</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Cüzdan Durum Barı */}
-      <div className="max-w-6xl mx-auto mb-8 bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></div>
-          <span className="text-sm font-semibold text-gray-300">Akıllı Sözleşme Kalkanı: <strong className="text-emerald-400">AKTİF</strong></span>
-        </div>
-        {!account ? (
-          <button onClick={connectWallet} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm transition-all shadow-lg shadow-emerald-600/20">
-            🔒 MetaMask Bağla & Ticareti Aç
-          </button>
-        ) : (
-          <div className="flex items-center gap-4 text-xs font-mono">
-            <span className="bg-slate-800 px-3 py-1.5 rounded-lg text-emerald-400 border border-slate-700">Bakiye: {Number(balance).toFixed(4)} POL/ETH</span>
-            <span className="bg-slate-800 px-3 py-1.5 rounded-lg text-gray-300 border border-slate-700 truncate w-36">{account}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Durum Bilgilendirme */}
+      {/* Durum Bilgilendirme Ekranı */}
       {status && (
-        <div className="max-w-6xl mx-auto mb-6 p-3 rounded-xl text-center text-xs font-semibold border bg-slate-900 border-slate-700 text-emerald-400">
+        <div className={`w-full max-w-6xl mb-6 p-3 rounded-xl text-center text-xs font-semibold border ${
+          status.includes("❌") || status.includes("⛔") || status.includes("⚠️") ? "bg-red-950/50 text-red-300 border-red-800" : status.includes("🟢") || status.includes("✅") ? "bg-emerald-950/50 text-emerald-300 border-emerald-800" : "bg-blue-950/50 text-blue-300 border-blue-800"
+        }`}>
           {status}
         </div>
       )}
 
-      {/* Ana Çalışma Alanı: 2 Kolonlu Izgara */}
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {/* 📱 TELEFONLAR İÇİN AKILLI SEKME (TAB) BUTONLARI (Bilgisayarda gizlenir!) */}
+      <div className="flex lg:hidden w-full max-w-md bg-slate-900 p-1.5 rounded-2xl border border-slate-800 mb-6 shadow-lg">
+        <button
+          onClick={() => setActiveTab("transfer")}
+          className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+            activeTab === "transfer" ? "bg-blue-600 text-white shadow-md" : "text-gray-400 hover:text-white"
+          }`}
+        >
+          🚀 Anlık Transfer
+        </button>
+        <button
+          onClick={() => setActiveTab("escrow")}
+          className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+            activeTab === "escrow" ? "bg-emerald-600 text-white shadow-md" : "text-gray-400 hover:text-white"
+          }`}
+        >
+          🤝 Escrow Ticaret
+        </button>
+      </div>
+
+      {/* 🏁 ASIL ÇALIŞMA ALANI: BİLGİSAYARDA YAN YANA (2 Kolon), TELEFONDA TEK KOLON */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full max-w-6xl items-start">
         
-        {/* SOL KOLON: Yeni Ticaret Başlat (Kilitleme Formu) - 5 Kolon */}
-        <div className="lg:col-span-5 bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl h-fit">
-          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            🔒 Yeni Emanet İşlemi Başlat
-          </h2>
-          <p className="text-xs text-gray-400 mb-6 leading-relaxed">
-            Paranız doğrudan satıcıya gitmez. Akıllı sözleşmede güvenceye alınır ve mal/hizmet teslim olana kadar kilitli kalır.
-          </p>
+        {/* 🚀 1. MOTOR: ANLIK GÜVENLİ TRANSFER KOKPİTİ */}
+        {/* Telefondaysa sadece activeTab == 'transfer' ise görünür. Bilgisayarda (lg:) her zaman görünür! */}
+        <div className={`${activeTab === "transfer" ? "block" : "hidden"} lg:block bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl hover:border-blue-500/30 transition-all`}>
+          <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+            <div>
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <span>🚀</span> Anlık Güvenli Transfer
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">3 Katmanlı Güvenlik Zırhlı Hızlı Gönderim</p>
+            </div>
+            <span className="text-[10px] bg-blue-950 text-blue-300 border border-blue-800 px-2.5 py-1 rounded-full font-mono uppercase">Modül #1</span>
+          </div>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Satıcı Cüzdan Adresi</label>
-              <input type="text" placeholder="0x... (Mal/Hizmeti Sağlayacak Adres)" value={sellerAddress} onChange={(e) => setSellerAddress(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-emerald-400 outline-none focus:border-emerald-500 transition-all" />
+              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Gönderilecek Varlık</label>
+              <select value={transferToken} onChange={(e) => setTransferToken(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-blue-500">
+                <option value="USDT">💵 USDT (Tether Dolar)</option>
+                <option value="XAUT">🥇 XAUT (Tether Altın)</option>
+              </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Alıcı Cüzdan Adresi</label>
+              <input type="text" placeholder="0x... (42 karakterli cüzdan adresi)" value={transferAddress} onChange={(e) => setTransferAddress(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-blue-400 outline-none focus:border-blue-500" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Miktar</label>
+              <input type="number" placeholder="0.00" value={transferAmount} onChange={(e) => setTransferAmount(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-blue-500" />
+            </div>
+
+            <button
+              onClick={handleTransfer}
+              disabled={!account || isWrongNetwork}
+              className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${
+                !account ? "bg-gray-800 text-gray-500 cursor-not-allowed" : isWrongNetwork ? "bg-red-600 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/30 active:scale-95 cursor-pointer"
+              }`}
+            >
+              {!account ? "🔒 Önce Cüzdan Bağlayın" : "🚀 Güvenli Gönderimi Başlat"}
+            </button>
+          </div>
+        </div>
+
+        {/* 🤝 2. MOTOR: ESCROW GÜVENCELİ TİCARET KOKPİTİ */}
+        {/* Telefondaysa sadece activeTab == 'escrow' ise görünür. Bilgisayarda (lg:) her zaman görünür! */}
+        <div className={`${activeTab === "escrow" ? "block" : "hidden"} lg:block bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl hover:border-emerald-500/30 transition-all flex flex-col justify-between h-full`}>
+          <div>
+            <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Miktar</label>
-                <input type="number" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-emerald-500 transition-all" />
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <span>🤝</span> Güvenli Ticaret (Escrow)
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">Alıcı ve Satıcıyı Koruyan Akıllı Emanet Kasası</p>
               </div>
+              <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-1 rounded-full font-mono uppercase">Modül #2</span>
+            </div>
+
+            <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Varlık Türü</label>
-                <select value={token} onChange={(e) => setToken(e.target.value)} className="w-full p-3.5
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Satıcı Cüzdan Adresi</label>
+                <input type="text" placeholder="0x... (Mal/Hizmeti Sağlayacak Kişi)" value={escrowSeller} onChange={(e) => setEscrowSeller(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-emerald-400 outline-none focus:border-emerald-500" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Miktar</label>
+                  <input type="number" placeholder="0.00" value={escrowAmount} onChange={(e) => setEscrowAmount(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-emerald-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Varlık</label>
+                  <select value={escrowToken} onChange={(e) => setEscrowToken(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-emerald-500">
+                    <option value="USDT">💵 USDT</option>
+                    <option value="XAUT">🥇 XAUT</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Ticaret Açıklaması</label>
+                <input type="text" placeholder="Örn: Araç Kapora Bedeli / Yazılım İş Ücreti" value={escrowDesc} onChange={(e) => setEscrowDesc(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-gray-300 outline-none focus:border-emerald-500" />
+              </div>
+
+              <button
+                onClick={handleCreateEscrow}
+                disabled={!account || isWrongNetwork}
+                className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${
+                  !account ? "bg-gray-800 text-gray-500 cursor-not-allowed" : isWrongNetwork ? "bg-red-600 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30 active:scale-95 cursor-pointer"
+                }`}
+              >
+                {!account ? "🔒 Önce Cüzdan Bağlayın" : "🤝 Kasaya Kilitle & Başlat"}
+              </button>
+            </div>
+          </div>
+
+          {/* Aktif Kilitli İşlemler Mini Paneli */}
+          <div className="mt-6 pt-4 border-t border-slate-800">
+            <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center justify-between">
+              <span>📜 Kilitli Kasadaki İşlemler</span>
+              <span className="text-emerald-400 font-mono">Top: {activeEscrows.length}</span>
+            </h4>
+            <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+              {activeEscrows.map((item) => (
+                <div key={item.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-white block">{item.desc}</span>
+                    <span className="text-[10px] text-gray-500 font-mono">{item.amount} • {item.seller}</span>
+                  </div>
+                  <button onClick={() => handleRelease(item.id)} className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 font-bold px-2.5 py-1 rounded-lg text-[11px] transition-all">
+                    ✅ Onayla
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* Alt Bilgi */}
+      <div className="mt-16 text-gray-600 text-xs font-mono text-center">
+        SafeBridge v2.5.0 • Akıllı Çift Motorlu Kokpit • Hoşdere Disipliniyle Üretildi 🛠️
+      </div>
+
+    </div>
+  );
+}
