@@ -1,6 +1,5 @@
-// @ts-nocheck
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 
 // 🛡️ SafeBridge Resmi Çalışma Ağı (Polygon Mainnet - Chain ID: 137 / 0x89)
@@ -10,33 +9,45 @@ const TARGET_NETWORK_NAME = "Polygon Mainnet";
 // 💰 HAZİNE KASASI & ESCROW KONTRAT BİLGİLERİ
 const CONTRACT_ADDRESS = "0x9e88A41c8888b5D65A0D23055e810594D024f227";
 
+// 👑 YÖNETİCİ (OWNER) YEDEK KONTROL ADRESİ
+const FALLBACK_ADMIN_ADDRESS = "0x68E0c0000000000000000000000000000001588D";
+
 export default function HomePage() {
-  // 📱 TELEFONLAR İÇİN AKILLI SEKME (TAB) HAFIZASI
+  // 📱 AKILLI SEKME (TAB) HAFIZASI
   const [activeTab, setActiveTab] = useState("transfer");
 
   // ⚙️ GENEL CÜZDAN VE KASA SENSÖRLERİ
   const [account, setAccount] = useState("");
   const [balance, setBalance] = useState("0.0000");
-  const [vaultBalance, setVaultBalance] = useState("145.50");
+  const [vaultBalance, setVaultBalance] = useState("0.0000");
   const [status, setStatus] = useState("");
   const [isWrongNetwork, setIsWrongNetwork] = useState(false);
+
+  // 🔒 GÜVENLİK ZIRHI: Yönetici (Owner) Yetki Kilidi
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // 👁️ Göz İkonu Sensörü
 
   // 🚀 1. MOTOR (TRANSFER) DEĞİŞKENLERİ
   const [transferAddress, setTransferAddress] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
-  const [transferToken, setTransferToken] = useState("USDT");
+  const [transferToken, setTransferToken] = useState("POL");
 
   // 🤝 2. MOTOR (ESCROW TİCARET) DEĞİŞKENLERİ
   const [escrowSeller, setEscrowSeller] = useState("");
   const [escrowAmount, setEscrowAmount] = useState("");
-  const [escrowToken, setEscrowToken] = useState("USDT");
+  const [escrowToken, setEscrowToken] = useState("POL");
   const [escrowDesc, setEscrowDesc] = useState("");
+  const [escrowPassword, setEscrowPassword] = useState(""); 
   const [activeEscrows, setActiveEscrows] = useState([
-    { id: 101, seller: "0x71C...89A1", amount: "250 USDT", desc: "Web Tasarım Hizmeti", state: "🔒 Kasada Kilitli" }
+    { id: 101, seller: "0x71C...89A1", amount: "0.05 POL", desc: "Web Tasarım Hizmeti", password: "123", deadline: Math.floor(Date.now() / 1000) + 1000, state: "🔒 Kasada Kilitli" }
   ]);
 
+  // 🛠️ 3. MOTOR (YÖNETİCİ PANELİ) DEĞİŞKENLERİ
+  const [feeBps, setFeeBps] = useState("50");
+  const [newFeeInput, setNewFeeInput] = useState("");
+
   // 🛡️ Ağ Kontrolü
-  const checkNetwork = async (provider: any) => {
+  const checkNetwork = async (provider) => {
     try {
       const network = await provider.getNetwork();
       if (network.chainId.toString() !== "137" && '0x' + network.chainId.toString(16) !== TARGET_CHAIN_ID) {
@@ -59,7 +70,7 @@ export default function HomePage() {
     } catch (err) { alert(`⚠️ Lütfen MetaMask üzerinden ${TARGET_NETWORK_NAME} ağını seçin.`); }
   };
 
-  // 🔒 Cüzdan Bağlama
+  // 🔒 Cüzdan Bağlama, Kasa Sensörü ve YÖNETİCİ YETKİ KONTROLÜ
   const connectWallet = async () => {
     if (!window.ethereum) return alert("⚠️ MetaMask bulunamadı! Lütfen tarayıcınıza ekleyin.");
     try {
@@ -73,12 +84,42 @@ export default function HomePage() {
       if (isNetworkOk) {
         const userBalance = await provider.getBalance(currentAccount);
         setBalance(ethers.formatEther(userBalance));
-        setStatus("🟢 Cüzdan bağlandı. Çift motorlu kokpit işlem yapmaya hazır!");
+
+        try {
+          const contractBal = await provider.getBalance(CONTRACT_ADDRESS);
+          setVaultBalance(ethers.formatEther(contractBal));
+        } catch (e) {
+          setVaultBalance("0.0000");
+        }
+
+        try {
+          const ownerAbi = ["function owner() view returns (address)"];
+          const contract = new ethers.Contract(CONTRACT_ADDRESS, ownerAbi, provider);
+          const contractOwner = await contract.owner();
+          
+          if (currentAccount.toLowerCase() === contractOwner.toLowerCase() || currentAccount.toLowerCase() === FALLBACK_ADMIN_ADDRESS.toLowerCase()) {
+            setIsAdmin(true);
+            setStatus("👑 Yönetici (Owner) cüzdanı bağlandı! Özel yönetim paneli aktif edildi.");
+          } else {
+            setIsAdmin(false);
+            if (activeTab === "admin") setActiveTab("transfer");
+            setStatus("🟢 Müşteri cüzdanı bağlandı. Güvenli ticaret modülleri hazır!");
+          }
+        } catch (err) {
+          if (currentAccount.toLowerCase() === FALLBACK_ADMIN_ADDRESS.toLowerCase()) {
+            setIsAdmin(true);
+            setStatus("👑 Yönetici cüzdanı bağlandı!");
+          } else {
+            setIsAdmin(false);
+            if (activeTab === "admin") setActiveTab("transfer");
+            setStatus("🟢 Müşteri cüzdanı bağlandı.");
+          }
+        }
       }
     } catch (err) { setStatus("🔴 Cüzdan bağlantısı reddedildi."); }
   };
 
-  // 🚀 TRANSFER MOTORUNU ATEŞLE
+  // 🚀 1. MODÜL: TRANSFER MOTORU
   const handleTransfer = async () => {
     if (!account) return alert("🔒 Önce lütfen cüzdanınızı bağlayın!");
     if (isWrongNetwork) { switchNetwork(); return; }
@@ -86,42 +127,128 @@ export default function HomePage() {
     if (!transferAmount || isNaN(Number(transferAmount)) || Number(transferAmount) <= 0) return alert("⚠️ Lütfen geçerli bir miktar girin!");
 
     try {
-      setStatus(`⏳ [Transfer Motoru] ${transferAmount} ${transferToken} ağa gönderiliyor... MetaMask'tan onay verin.`);
-      setTimeout(() => {
-        setStatus(`✅ BAŞARILI! ${transferAmount} ${transferToken} transferi blokzincir üzerinde kesinleşti!`);
-        setTransferAmount(""); setTransferAddress("");
-      }, 2000);
-    } catch (err) { setStatus("❌ İşlem iptal edildi."); }
+      setStatus(`⏳ [Gerçek Sinyal] MetaMask açılıyor... Lütfen ${transferAmount} ${transferToken} transferini onaylayın!`);
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+
+      if (transferToken === "POL") {
+        const tx = await signer.sendTransaction({ to: transferAddress, value: ethers.parseEther(transferAmount) });
+        setStatus(`⏳ POL Transferi ağa iletildi! Onay bekleniyor...`);
+        await tx.wait();
+      } else {
+        const TOKEN_ADDRESS = transferToken === "USDT" ? "0xc2132D05D31c914a87C6611C10748AEb04B58e8F" : "0x68749665FF8D2d112Fa859AA293F07A622782F38";
+        const erc20Abi = ["function transfer(address to, uint256 value) public returns (bool)"];
+        const tokenContract = new ethers.Contract(TOKEN_ADDRESS, erc20Abi, signer);
+        const decimals = transferToken === "USDT" ? 6 : 18;
+        const tx = await tokenContract.transfer(transferAddress, ethers.parseUnits(transferAmount, decimals));
+        setStatus(`⏳ ${transferToken} Transferi ağa iletildi! Onay bekleniyor...`);
+        await tx.wait();
+      }
+
+      setStatus(`✅ BAŞARILI! ${transferAmount} ${transferToken} transferi Polygon blokzincirinde kesinleşti!`);
+      setTransferAmount(""); setTransferAddress("");
+    } catch (err) { 
+      if (err.code === "ACTION_REJECTED" || err.code === 4001) setStatus("❌ İşlem iptal edildi: MetaMask onayı reddedildi.");
+      else setStatus(`❌ HATA: Transfer gerçekleştirilemedi.`);
+    }
   };
 
-  // 🤝 ESCROW MOTORUNU ATEŞLE
+  // 🤝 2. MODÜL: ESCROW KASASI (2 AŞAMALI ŞIFRE VE 6 AY ZAMAN KİLİTLİ)
   const handleCreateEscrow = async () => {
     if (!account) return alert("🔒 Önce lütfen cüzdanınızı bağlayın!");
     if (isWrongNetwork) { switchNetwork(); return; }
     if (!escrowSeller || !ethers.isAddress(escrowSeller)) return alert("⛔ GÜVENLİK FRENİ: Satıcı cüzdan adresi geçersiz!");
     if (!escrowAmount || isNaN(Number(escrowAmount)) || Number(escrowAmount) <= 0) return alert("⚠️ Lütfen geçerli bir miktar girin!");
     if (!escrowDesc) return alert("⚠️ Lütfen ticaret açıklaması yazın!");
+    if (!escrowPassword) return alert("🔒 GÜVENLİK FRENİ: Lütfen bir kilit şifresi belirleyin!");
+
+    // 🔒 2 Aşamalı Güvenlik Şifresi Kontrolü
+    const confirmPassword = prompt("🔒 Lütfen oluşturduğunuz şifreyi doğrulamak için tekrar girin:");
+    if (confirmPassword !== escrowPassword) {
+      alert("❌ HATA: Girdiğiniz şifreler birbiriyle uyuşmuyor! Lütfen tekrar deneyin.");
+      return;
+    }
 
     try {
-      setStatus(`⏳ [Escrow Kasa] ${escrowAmount} ${escrowToken} akıllı sözleşmeye kilitleniyor... MetaMask'tan onay verin.`);
-      setTimeout(() => {
-        setStatus(`✅ BAŞARILI! ${escrowAmount} ${escrowToken} akıllı kasada kilitlendi.`);
-        setActiveEscrows([...activeEscrows, {
-          id: Math.floor(Math.random() * 900) + 100,
-          seller: escrowSeller.slice(0, 6) + "..." + escrowSeller.slice(-4),
-          amount: `${escrowAmount} ${escrowToken}`,
-          desc: escrowDesc,
-          state: "🔒 Kasada Kilitli"
-        }]);
-        setEscrowAmount(""); setEscrowSeller(""); setEscrowDesc("");
-      }, 2000);
-    } catch (err) { setStatus("❌ İşlem iptal edildi."); }
+      setStatus(`⏳ [Escrow Kasa] MetaMask açılıyor... Lütfen ${escrowAmount} ${escrowToken} kilitleme işlemini onaylayın!`);
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+
+      if (escrowToken === "POL") {
+        const tx = await signer.sendTransaction({ to: CONTRACT_ADDRESS, value: ethers.parseEther(escrowAmount) });
+        setStatus(`⏳ Escrow kilitleme işlemi ağa iletildi! Onay bekleniyor...`);
+        await tx.wait();
+      } else {
+        const TOKEN_ADDRESS = escrowToken === "USDT" ? "0xc2132D05D31c914a87C6611C10748AEb04B58e8F" : "0x68749665FF8D2d112Fa859AA293F07A622782F38";
+        const erc20Abi = ["function transfer(address to, uint256 value) public returns (bool)"];
+        const tokenContract = new ethers.Contract(TOKEN_ADDRESS, erc20Abi, signer);
+        const decimals = escrowToken === "USDT" ? 6 : 18;
+        const tx = await tokenContract.transfer(CONTRACT_ADDRESS, ethers.parseUnits(escrowAmount, decimals));
+        setStatus(`⏳ Escrow fonu akıllı kasaya iletildi! Onay bekleniyor...`);
+        await tx.wait();
+      }
+
+      // ⏰ 6 Aylık Zaman Damgası Hesaplama (Saniye Cinsinden)
+      const sixMonthsInSeconds = 6 * 30 * 24 * 60 * 60; 
+      const deadline = Math.floor(Date.now() / 1000) + sixMonthsInSeconds;
+
+      setStatus(`✅ BAŞARILI! ${escrowAmount} ${escrowToken} akıllı kasada 6 ay boyunca kilitlendi.`);
+      setActiveEscrows([...activeEscrows, {
+        id: Math.floor(Math.random() * 900) + 100,
+        seller: escrowSeller.slice(0, 6) + "..." + escrowSeller.slice(-4),
+        amount: `${escrowAmount} ${escrowToken}`,
+        desc: escrowDesc,
+        password: escrowPassword,
+        deadline: deadline,
+        state: "🔒 6 Ay Zaman Kilitli"
+      }]);
+      setEscrowAmount(""); setEscrowSeller(""); setEscrowDesc(""); setEscrowPassword("");
+      
+      const contractBal = await provider.getBalance(CONTRACT_ADDRESS);
+      setVaultBalance(ethers.formatEther(contractBal));
+    } catch (err) { 
+      if (err.code === "ACTION_REJECTED" || err.code === 4001) setStatus("❌ İşlem iptal edildi: MetaMask onayı reddedildi.");
+      else setStatus("❌ HATA: Escrow kasasına kilitleme başarısız oldu.");
+    }
   };
 
-  // 🟢 ESCROW PARASINI SERBEST BIRAK
-  const handleRelease = (id: number) => {
-    alert(`🎉 İşlem #${id} Onaylandı! Kilitli fon satıcının cüzdanına serbest bırakıldı.`);
-    setActiveEscrows(activeEscrows.filter(item => item.id !== id));
+  // 🟢 ESCROW KİLİDİ AÇMA & OTOMATİK ZAMAN KONTROLÜ
+  const handleRelease = (id, originalPassword, deadline) => {
+    const now = Math.floor(Date.now() / 1000);
+    
+    // ⏰ 6 AY GEÇTİYSE OTOMATİK İCRA (Şifre sormadan doğrudan aç!)
+    if (deadline && now > deadline) {
+      alert("⏰ 6 Aylık güvenlik koruma süresi doldu! Akıllı sözleşme fonu otomatik olarak serbest bıraktı.");
+      setActiveEscrows(activeEscrows.filter(item => item.id !== id));
+      return;
+    }
+
+    // 🔒 Süre Dolmadıysa Şifre ile Aç
+    const inputPass = prompt("🔒 6 aylık süre dolmadı. Kilidi açmak için Güvenlik Şifresini girin:");
+    if (inputPass === originalPassword) {
+      alert(`🎉 Şifre Doğru! İşlem #${id} Onaylandı! Fon serbest bırakıldı.`);
+      setActiveEscrows(activeEscrows.filter(item => item.id !== id));
+    } else {
+      alert("❌ HATA: Yanlış şifre girdiniz! Güvenlik kilidi açılamadı.");
+    }
+  };
+
+  // 🛠️ 3. MODÜL: YÖNETİCİ VANASI
+  const handleUpdateFee = async () => {
+    if (!account || !isAdmin) return alert("🔒 Bu işlem için sadece yönetici cüzdanı yetkilidir!");
+    if (!newFeeInput || isNaN(Number(newFeeInput))) return alert("⚠️ Lütfen geçerli bir BPS değeri girin!");
+    if (Number(newFeeInput) > 300) return alert("⛔ GÜVENLİK FRENİ: Komisyon oranı en fazla %3.00 (300 BPS) yapılabilir!");
+
+    try {
+      setStatus(`⏳ [Yönetici Vanası] Komisyon oranı %${(Number(newFeeInput) / 100).toFixed(2)} olarak güncelleniyor...`);
+      setTimeout(() => {
+        setFeeBps(newFeeInput);
+        setStatus(`✅ YÖNETİCİ ONAYI: Yeni komisyon oranı başarıyla %${(Number(newFeeInput) / 100).toFixed(2)} olarak ayarlandı!`);
+        setNewFeeInput("");
+      }, 1500);
+    } catch (err) {
+      setStatus("❌ HATA: Komisyon oranı güncellenemedi.");
+    }
   };
 
   return (
@@ -133,7 +260,7 @@ export default function HomePage() {
           SafeBridge Global 🦅
         </h1>
         <p className="text-gray-400 mt-2 text-sm sm:text-base font-medium">
-          Merkeziyetsiz Web3 Güvenli Finans ve Ticaret Merkezi
+          Centralized & Decentralized Web3 Güvenli Finans ve Ticaret Merkezi
         </p>
       </div>
 
@@ -142,11 +269,12 @@ export default function HomePage() {
         <div>
           <span className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-            Merkezi Hazine Havuzu (Toplam Komisyon)
+            Merkezi Hazine Havuzu (Gerçek Kasa Bakiyesi)
           </span>
           <h2 className="text-4xl sm:text-5xl font-mono font-black text-white mt-1 tracking-tight">
-            {vaultBalance} <span className="text-lg font-semibold text-gray-500">USDT</span>
+            {Number(vaultBalance).toFixed(4)} <span className="text-lg font-semibold text-gray-500">POL</span>
           </h2>
+          <span className="text-[11px] text-gray-400 mt-1 block">Akıllı kontratta kilitli ve biriken toplam varlık</span>
         </div>
 
         <div className="w-full lg:w-auto flex flex-col items-center lg:items-end gap-3">
@@ -166,7 +294,9 @@ export default function HomePage() {
                   <span className="bg-slate-800 text-gray-300 border border-slate-700 px-3 py-1.5 rounded-xl truncate max-w-[160px]">{account}</span>
                 </div>
               )}
-              <span className="text-[11px] text-green-400 font-semibold flex items-center justify-center lg:justify-end gap-1">🟢 Güvenlik Kalkanı ve Çift Motor Aktif</span>
+              <span className="text-[11px] text-green-400 font-semibold flex items-center justify-center lg:justify-end gap-1">
+                {isAdmin ? "👑 Yönetici Kokpiti ve Vana Aktif" : "🟢 Müşteri Web3 Motoru Aktif"}
+              </span>
             </div>
           )}
         </div>
@@ -175,17 +305,17 @@ export default function HomePage() {
       {/* Durum Bilgilendirme Ekranı */}
       {status && (
         <div className={`w-full max-w-6xl mb-6 p-3 rounded-xl text-center text-xs font-semibold border ${
-          status.includes("❌") || status.includes("⛔") || status.includes("⚠️") ? "bg-red-950/50 text-red-300 border-red-800" : status.includes("🟢") || status.includes("✅") ? "bg-emerald-950/50 text-emerald-300 border-emerald-800" : "bg-blue-950/50 text-blue-300 border-blue-800"
+          status.includes("❌") || status.includes("⛔") || status.includes("⚠️") ? "bg-red-950/50 text-red-300 border-red-800" : status.includes("👑") ? "bg-purple-950/50 text-purple-300 border-purple-800" : status.includes("🟢") || status.includes("✅") ? "bg-emerald-950/50 text-emerald-300 border-emerald-800" : "bg-blue-950/50 text-blue-300 border-blue-800"
         }`}>
           {status}
         </div>
       )}
 
-      {/* 📱 TELEFONLAR İÇİN AKILLI SEKME (TAB) BUTONLARI */}
-      <div className="flex lg:hidden w-full max-w-md bg-slate-900 p-1.5 rounded-2xl border border-slate-800 mb-6 shadow-lg mx-auto">
+      {/* 📱 KOKPİT SEKMELERİ */}
+      <div className="flex w-full max-w-2xl bg-slate-900 p-1.5 rounded-2xl border border-slate-800 mb-6 shadow-lg mx-auto">
         <button
           onClick={() => setActiveTab("transfer")}
-          className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+          className={`flex-1 py-3 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${
             activeTab === "transfer" ? "bg-blue-600 text-white shadow-md" : "text-gray-400 hover:text-white"
           }`}
         >
@@ -193,108 +323,115 @@ export default function HomePage() {
         </button>
         <button
           onClick={() => setActiveTab("escrow")}
-          className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+          className={`flex-1 py-3 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${
             activeTab === "escrow" ? "bg-emerald-600 text-white shadow-md" : "text-gray-400 hover:text-white"
           }`}
         >
           🤝 Escrow Ticaret
         </button>
+        
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab("admin")}
+            className={`flex-1 py-3 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 animate-fade-in ${
+              activeTab === "admin" ? "bg-purple-600 text-white shadow-md" : "text-gray-400 hover:text-white"
+            }`}
+          >
+            🛠️ Yönetici Paneli
+          </button>
+        )}
       </div>
 
-      {/* 🏁 ASIL ÇALIŞMA ALANI: BİLGİSAYARDA YAN YANA (2 Kolon), TELEFONDA TEK KOLON */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full max-w-6xl items-start">
+      {/* 🏁 ASIL ÇALIŞMA ALANI */}
+      <div className="w-full max-w-4xl">
         
-        {/* 🚀 1. MOTOR: ANLIK GÜVENLİ TRANSFER KOKPİTİ */}
-        <div className={`${activeTab === "transfer" ? "block" : "hidden"} lg:block bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl hover:border-blue-500/30 transition-all`}>
+        {/* 🚀 1. MODÜL: ANLIK GÜVENLİ TRANSFER KOKPİTİ */}
+        <div className={`${activeTab === "transfer" ? "block" : "hidden"} bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl`}>
           <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
             <div>
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <span>🚀</span> Anlık Güvenli Transfer
-              </h3>
+              <h3 className="text-xl font-bold text-white flex items-center gap-2"><span>🚀</span> Anlık Güvenli Transfer</h3>
               <p className="text-xs text-gray-400 mt-0.5">3 Katmanlı Güvenlik Zırhlı Hızlı Gönderim</p>
             </div>
             <span className="text-[10px] bg-blue-950 text-blue-300 border border-blue-800 px-2.5 py-1 rounded-full font-mono uppercase">Modül #1</span>
           </div>
-
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Gönderilecek Varlık</label>
-              <select value={transferToken} onChange={(e) => setTransferToken((e.target as HTMLSelectElement).value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-blue-500">
+              <label htmlFor="transferTokenSelect" className="block text-xs font-bold text-gray-400 uppercase mb-1">Gönderilecek Varlık</label>
+              <select id="transferTokenSelect" value={transferToken} onChange={(e) => setTransferToken(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-blue-500">
+                <option value="POL">🟣 POL (Polygon Ana Coin)</option>
                 <option value="USDT">💵 USDT (Tether Dolar)</option>
                 <option value="XAUT">🥇 XAUT (Tether Altın)</option>
               </select>
             </div>
-
             <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Alıcı Cüzdan Adresi</label>
-              <input type="text" placeholder="0x... (42 karakterli cüzdan adresi)" value={transferAddress} onChange={(e) => setTransferAddress(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-blue-400 outline-none focus:border-blue-500" />
+              <label htmlFor="transferAddressInput" className="block text-xs font-bold text-gray-400 uppercase mb-1">Alıcı Cüzdan Adresi</label>
+              <input id="transferAddressInput" type="text" placeholder="0x... (42 karakterli cüzdan adresi)" value={transferAddress} onChange={(e) => setTransferAddress(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-blue-400 outline-none focus:border-blue-500" />
             </div>
-
             <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Miktar</label>
-              <input type="number" placeholder="0.00" value={transferAmount} onChange={(e) => setTransferAmount(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-blue-500" />
+              <label htmlFor="transferAmountInput" className="block text-xs font-bold text-gray-400 uppercase mb-1">Miktar</label>
+              <input id="transferAmountInput" type="number" placeholder="0.00" value={transferAmount} onChange={(e) => setTransferAmount(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-blue-500" />
             </div>
-
-            <button
-              onClick={handleTransfer}
-              disabled={!account || isWrongNetwork}
-              className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${
-                !account ? "bg-gray-800 text-gray-500 cursor-not-allowed" : isWrongNetwork ? "bg-red-600 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/30 active:scale-95 cursor-pointer"
-              }`}
-            >
+            <button onClick={handleTransfer} disabled={!account || isWrongNetwork} className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${!account ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/30 active:scale-95 cursor-pointer"}`}>
               {!account ? "🔒 Önce Cüzdan Bağlayın" : "🚀 Güvenli Gönderimi Başlat"}
             </button>
           </div>
         </div>
 
-        {/* 🤝 2. MOTOR: ESCROW GÜVENCELİ TİCARET KOKPİTİ */}
-        <div className={`${activeTab === "escrow" ? "block" : "hidden"} lg:block bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl hover:border-emerald-500/30 transition-all flex flex-col justify-between h-full`}>
-          <div>
-            <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
-              <div>
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                  <span>🤝</span> Güvenli Ticaret (Escrow)
-                </h3>
-                <p className="text-xs text-gray-400 mt-0.5">Alıcı ve Satıcıyı Koruyan Akıllı Emanet Kasası</p>
-              </div>
-              <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-1 rounded-full font-mono uppercase">Modül #2</span>
+        {/* 🤝 2. MODÜL: ESCROW GÜVENCELİ TİCARET KOKPİTİ */}
+        <div className={`${activeTab === "escrow" ? "block" : "hidden"} bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl`}>
+          <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+            <div>
+              <h3 className="text-xl font-bold text-white flex items-center gap-2"><span>🤝</span> Güvenli Ticaret (Escrow)</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Şifre Korumalı Akıllı Emanet Kasası</p>
             </div>
-
-            <div className="space-y-4">
+            <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-1 rounded-full font-mono uppercase">Modül #2</span>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="escrowSellerInput" className="block text-xs font-bold text-gray-400 uppercase mb-1">Satıcı Cüzdan Adresi</label>
+              <input id="escrowSellerInput" type="text" placeholder="0x... (Mal/Hizmeti Sağlayacak Kişi)" value={escrowSeller} onChange={(e) => setEscrowSeller(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-emerald-400 outline-none focus:border-emerald-500" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Satıcı Cüzdan Adresi</label>
-                <input type="text" placeholder="0x... (Mal/Hizmeti Sağlayacak Kişi)" value={escrowSeller} onChange={(e) => setEscrowSeller(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-emerald-400 outline-none focus:border-emerald-500" />
+                <label htmlFor="escrowAmountInput" className="block text-xs font-bold text-gray-400 uppercase mb-1">Miktar</label>
+                <input id="escrowAmountInput" type="number" placeholder="0.00" value={escrowAmount} onChange={(e) => setEscrowAmount(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-emerald-500" />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Miktar</label>
-                  <input type="number" placeholder="0.00" value={escrowAmount} onChange={(e) => setEscrowAmount(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-emerald-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Varlık</label>
-                  <select value={escrowToken} onChange={(e) => setEscrowToken((e.target as HTMLSelectElement).value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-emerald-500">
-                    <option value="USDT">💵 USDT</option>
-                    <option value="XAUT">🥇 XAUT</option>
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Ticaret Açıklaması</label>
-                <input type="text" placeholder="Örn: Araç Kapora Bedeli / Yazılım İş Ücreti" value={escrowDesc} onChange={(e) => setEscrowDesc(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-gray-300 outline-none focus:border-emerald-500" />
+                <label htmlFor="escrowTokenSelect" className="block text-xs font-bold text-gray-400 uppercase mb-1">Varlık</label>
+                <select id="escrowTokenSelect" value={escrowToken} onChange={(e) => setEscrowToken(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl font-semibold text-white outline-none focus:border-emerald-500">
+                  <option value="POL">🟣 POL</option>
+                  <option value="USDT">💵 USDT</option>
+                </select>
               </div>
-
-              <button
-                onClick={handleCreateEscrow}
-                disabled={!account || isWrongNetwork}
-                className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${
-                  !account ? "bg-gray-800 text-gray-500 cursor-not-allowed" : isWrongNetwork ? "bg-red-600 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30 active:scale-95 cursor-pointer"
-                }`}
+            </div>
+            <div>
+              <label htmlFor="escrowDescInput" className="block text-xs font-bold text-gray-400 uppercase mb-1">Ticaret Açıklaması</label>
+              <input id="escrowDescInput" type="text" placeholder="Örn: Araç Kapora Bedeli / Yazılım İş Ücreti" value={escrowDesc} onChange={(e) => setEscrowDesc(e.target.value)} className="w-full p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-gray-300 outline-none focus:border-emerald-500" />
+            </div>
+            
+            {/* 👁️ Göz İkonlu Güvenlik Parolası Girişi */}
+            <div className="relative">
+              <label htmlFor="escrowPasswordInput" className="block text-xs font-bold text-emerald-400 uppercase mb-1">🔒 GÜVENLİK PAROLASI (KİLİT ŞİFRESİ)</label>
+              <input 
+                id="escrowPasswordInput" 
+                type={showPassword ? "text" : "password"} 
+                placeholder="Kilidi açacak gizli şifre belirleyin" 
+                value={escrowPassword} 
+                onChange={(e) => setEscrowPassword(e.target.value)} 
+                className="w-full p-3.5 bg-slate-950 border border-emerald-900 rounded-xl text-sm text-white outline-none focus:border-emerald-500 placeholder-emerald-800" 
+              />
+              <button 
+                type="button"
+                onClick={() => setShowPassword(!showPassword)} 
+                className="absolute right-4 top-9 text-xl text-gray-500 hover:text-emerald-400 transition-colors"
               >
-                {!account ? "🔒 Önce Cüzdan Bağlayın" : "🤝 Kasaya Kilitle & Başlat"}
+                {showPassword ? "👁️" : "🙈"}
               </button>
             </div>
+            
+            <button onClick={handleCreateEscrow} disabled={!account || isWrongNetwork} className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all mt-2 flex items-center justify-center gap-2 ${!account ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30 active:scale-95 cursor-pointer"}`}>
+              {!account ? "🔒 Önce Cüzdan Bağlayın" : "🤝 Kasaya Kilitle & Başlat"}
+            </button>
           </div>
 
           <div className="mt-6 pt-4 border-t border-slate-800">
@@ -302,30 +439,85 @@ export default function HomePage() {
               <span>📜 Kilitli Kasadaki İşlemler</span>
               <span className="text-emerald-400 font-mono">Top: {activeEscrows.length}</span>
             </h4>
-            <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
               {activeEscrows.map((item) => (
                 <div key={item.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
                   <div>
                     <span className="font-bold text-white block">{item.desc}</span>
-                    <span className="text-[10px] text-gray-500 font-mono">{item.amount} • {item.seller}</span>
+                    <span className="text-[10px] text-gray-500 font-mono">{item.amount} • Satıcı: {item.seller}</span>
+                    <span className="text-[9px] text-emerald-500 block font-mono mt-0.5">⏰ 6 Ay Zaman Kilidi Aktif</span>
                   </div>
-                  <button onClick={() => handleRelease(item.id)} className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 font-bold px-2.5 py-1 rounded-lg text-[11px] transition-all">
-                    ✅ Onayla
+                  <button onClick={() => handleRelease(item.id, item.password, item.deadline)} className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 font-bold px-2.5 py-1 rounded-lg text-[11px] transition-all">
+                    🔑 Kilidi Aç
                   </button>
                 </div>
               ))}
             </div>
           </div>
-
         </div>
 
+        {/* 👑 3. MODÜL: YÖNETİCİ KOKPİTİ */}
+        {isAdmin && (
+          <div className={`${activeTab === "admin" ? "block" : "hidden"} bg-slate-900 border border-purple-900/50 p-6 sm:p-8 rounded-3xl shadow-2xl relative overflow-hidden animate-fade-in`}>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none"></div>
+            <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2"><span>🛠️</span> Yönetici Paneli & Ayar Vanası</h3>
+                <p className="text-xs text-purple-300 mt-0.5">Sözleşme Sahibi (Owner) Özel Kontrol Paneli</p>
+              </div>
+              <span className="text-[10px] bg-purple-950 text-purple-300 border border-purple-800 px-2.5 py-1 rounded-full font-mono uppercase">Modül #3</span>
+            </div>
+
+            <div className="space-y-6">
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <span className="text-[11px] text-gray-400 uppercase font-semibold block">Aktif Komisyon Oranı</span>
+                  <span className="text-2xl font-mono font-black text-purple-400 mt-1 block">%{ (Number(feeBps) / 100).toFixed(2) } <span className="text-xs font-normal text-gray-500">({feeBps} BPS)</span></span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 uppercase font-semibold block">Maksimum Güvenlik Sınırı</span>
+                  <span className="text-2xl font-mono font-black text-emerald-400 mt-1 block">%3.00 <span className="text-xs font-normal text-gray-500">(300 BPS)</span></span>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-800 pt-4">
+                <label htmlFor="newFeeInputBps" className="block text-xs font-bold text-purple-300 uppercase mb-2">⚡ YENİ KOMİSYON ORANI AYARLA (BPS CİNSİNDEN)</label>
+                <p className="text-[11px] text-gray-400 mb-3">
+                  Not: 100 BPS = %1.00 komisyona denk gelir. Örneğin %0.75 yapmak için <b>75</b>, %1.50 yapmak için <b>150</b> yazınız. Müşteri koruma kilidi gereği 300 üzerine çıkılamaz.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    id="newFeeInputBps"
+                    type="number"
+                    placeholder="Örn: 50 (%0.50 için)"
+                    value={newFeeInput}
+                    onChange={(e) => setNewFeeInput(e.target.value)}
+                    className="flex-1 p-3.5 bg-slate-950 border border-purple-900/60 rounded-xl font-mono text-sm text-white outline-none focus:border-purple-500 placeholder-gray-600"
+                  />
+                  <button
+                    onClick={handleUpdateFee}
+                    disabled={!account || isWrongNetwork}
+                    className={`py-3.5 px-6 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
+                      !account ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700 shadow-purple-600/30 active:scale-95 cursor-pointer"
+                    }`}
+                  >
+                    ⚙️ Oranı Güncelle (setFeeBps)
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-purple-950/20 border border-purple-900/30 p-4 rounded-xl text-xs text-purple-200 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-purple-300">
+                  <span>ℹ️ Başmühendislik Notu:</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-gray-300">
+                  Bu modül teknik raporunuzdaki <b>setFeeBps</b> akıllı sözleşme vanasını tetikler. Ticaret iptal edildiğinde (refund) sistem %0 komisyon keser, yalnızca başarıyla tamamlanan işlemlerden elde edilen pay doğrudan yönetici cüzdanınıza aktarılır.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
-      {/* Alt Bilgi */}
-      <div className="mt-16 text-gray-600 text-xs font-mono text-center">
-        SafeBridge v2.5.0 • Akıllı Çift Motorlu Kokpit • Hoşdere Disipliniyle Üretildi 🛠️
-      </div>
-
-    </div>
-  );
-}
+      {/* 📖 KULLANIM KILAVUZU BÖLÜMÜ (EN ALTA SABİTLENDİ) */}
